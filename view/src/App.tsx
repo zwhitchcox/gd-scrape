@@ -77,13 +77,16 @@ const FINAL_CONSONANT_DIGRAPHS = [
   'ng',
 ]
 
-const patternMatch = memoize((str: string, pattern: string) => {
+const patternMatch = ((str: string, pattern: string) => {
   // if (str.replace('.com', '').length !== pattern.length) {
   //   return false
   // }
   str = str.replace('.com', '')
+  // if (str === "truku") {
+  //   debugger
+  // }
   for (let patI = 0, strI = 0; strI < str.length; strI++, patI++) {
-    if (patI > pattern.length) {
+    if (patI >= pattern.length) {
       return false
     }
     const letter = str[strI]
@@ -116,6 +119,7 @@ const patternMatch = memoize((str: string, pattern: string) => {
       }
     } else if (/[0-9]/.test(pat)) {
       if (letter !== str[Number(pat)]) {
+
         return false
       }
     } else if (letter !== pat) {
@@ -166,10 +170,28 @@ const priceToNumber = (price:string) => {
   }
   return Number(result.join(''))
 }
+
+const perPage = 20000
 function App() {
+  const [page, setPage] = useState(0)
+  const nextPage = () => {
+    window.scrollTo(0,0)
+    setPage(page + 1)
+  }
+  const prevPage = () => setPage(Math.max(0, page - 1))
+
   const [priceLimit, setPriceLimit] = useState(10000)
   const [newPattern, setNewPattern] = useState("")
-  const [patterns, setPatterns] = useState(startPatterns)
+  const [patterns, _setPatterns] = useState<{[key: string]: boolean}>(() => {
+    if (localStorage['patterns']) {
+      return JSON.parse(localStorage['patterns'])
+    }
+    return startPatterns
+  })
+  const setPatterns = (pat) => {
+    localStorage['patterns'] = JSON.stringify(pat)
+    _setPatterns(pat)
+  }
   const [showPatternsExplanation, setShowPatternsExplanation] = useState(false)
   const [domains, setDomains] = useState<{
     name: string
@@ -183,18 +205,21 @@ function App() {
       setDomains(domains)
     })()
   }, [])
-  const filtered = domains.filter(domain => {
-    const { name, price } = domain
-    const filterPatterns: string[] = []
-    for (const [key, value] of Object.entries(patterns)) {
-      if (value) {
-        filterPatterns.push(key)
-      }
+  const filterPatterns: string[] = []
+  for (const [key, value] of Object.entries(patterns)) {
+    if (value) {
+      filterPatterns.push(key)
     }
-    return filterPatterns.some(pattern => patternMatch(name, pattern))
-      && priceToNumber(price) < Number(priceLimit)
-      && !checkExpired(domain)
-  })
+  }
+  console.log(filterPatterns)
+  const filtered = domains
+    .slice(perPage*page, perPage*page + perPage)
+    .filter(domain => {
+      const { name, price } = domain
+      return filterPatterns.some(pattern => patternMatch(name, pattern))
+        && priceToNumber(price) < Number(priceLimit)
+        && !checkExpired(domain)
+    })
 
   return (
     <div className="App">
@@ -267,6 +292,15 @@ function App() {
           )
         })}
       </div>
+      <div>
+        Page: {page + 1} &nbsp;
+        <button onClick={prevPage}>
+          Prev Page
+        </button>
+        <button onClick={nextPage}>
+          Next Page
+        </button>
+      </div>
       <table>
         <tbody>
         {filtered.map(domain => {
@@ -286,6 +320,15 @@ function App() {
         })}
         </tbody>
       </table>
+      <div>
+        Page: {page + 1} &nbsp;
+        <button onClick={prevPage}>
+          Prev Page
+        </button>
+        <button onClick={nextPage}>
+          Next Page
+        </button>
+      </div>
     </div>
   );
 }
