@@ -1,6 +1,23 @@
 import React, { useEffect, useState } from 'react';
+import memoize from 'lodash/memoize'
 import './App.scss';
-const PRICE_LIMIT = 10000
+
+const gathered = 1613967115931
+
+const parseTimeFrom = memoize((timeStr: string) => {
+  const hoursMatch = timeStr.match(/(\d)+H/)
+  const hours = (hoursMatch && parseInt(hoursMatch[1])) || 0
+  const minutesMatch = timeStr.match(/(\d)+M/)
+  const minutes = (minutesMatch && parseInt(minutesMatch[1])) || 0
+  const daysMatch = timeStr.match(/(\d)+D/)
+  const days = (daysMatch && parseInt(daysMatch[1])) || 0
+  return {
+    hours: hours,
+    minutes: minutes,
+    days: days,
+  }
+})
+
 const VOWEL_SYMBOL = '_'
 const CONSONANT_SYMBOL = '$'
 const startPatterns = {
@@ -11,15 +28,81 @@ const startPatterns = {
   '$_$2_': false,
   '$_$$_': false,
   '$_11$': false,
+  '$__$_': false,
+  '$o1$': false,
+  '$e1$': false,
 }
+const INITIAL_CONSONANT_DIGRAPHS = [
+  'bl',
+  'br',
+  'ch',
+  'cl',
+  'cr',
+  'dr',
+  'fl',
+  'fr',
+  'gl',
+  'gr',
+  'ph',
+  'pl',
+  'pr',
+  'qu',
+  'sc',
+  'sh',
+  'sl',
+  'sm',
+  'sn',
+  'sp',
+  'st',
+  'sw',
+  'th',
+  'tr',
+  'tw',
+  'wh',
+  'wr',
+]
 
-const patternMatch = (str: string, pattern: string) => {
-  if (str.replace('.com', '').length !== pattern.length) {
-    return false
-  }
-  for (let i = 0; i < pattern.length; i++) {
-    const letter = str[i]
-    const pat = pattern[i]
+const FINAL_CONSONANT_DIGRAPHS = [
+  'ch',
+  'ck',
+  'gh',
+  'lt',
+  'st',
+  'th',
+  'sk',
+  'sh',
+  'sm',
+  'sp',
+  'ph',
+  'ng',
+]
+
+const patternMatch = memoize((str: string, pattern: string) => {
+  // if (str.replace('.com', '').length !== pattern.length) {
+  //   return false
+  // }
+  str = str.replace('.com', '')
+  for (let patI = 0, strI = 0; strI < str.length; strI++, patI++) {
+    if (patI > pattern.length) {
+      return false
+    }
+    const letter = str[strI]
+    const pat = pattern[patI]
+    if (pat === CONSONANT_SYMBOL) {
+      if (strI === 0) {
+        const digraph = str.substr(strI, 2)
+        if (INITIAL_CONSONANT_DIGRAPHS.includes(digraph)) {
+          strI++
+          continue
+        }
+      } else {
+        const digraph = str.substr(strI, 2)
+        if (FINAL_CONSONANT_DIGRAPHS.includes(digraph)) {
+          strI++
+          continue
+        }
+      }
+    }
     if (pat === '*') {
       continue
     }
@@ -40,14 +123,42 @@ const patternMatch = (str: string, pattern: string) => {
     }
   }
   return true
-}
+})
+
+const minute = 60 * 1000
+const hour = 60 * minute
+const day = 24 * hour
+const checkExpired = memoize((domain) => {
+  const _gathered = domain.gathered || gathered
+  const {hours, minutes, days}  = parseTimeFrom(domain.timeLeft)
+  const expires = _gathered + days*day + hours*hour + minutes*minute
+  return Date.now() > expires
+})
+
+const getTimeLeft = memoize(domain => {
+  const _gathered = domain.gathered || gathered
+  const {hours, minutes, days}  = parseTimeFrom(domain.timeLeft)
+  const expires = _gathered + days*day + hours*hour + minutes*minute
+  const left = Date.now() - expires
+  const { abs } = Math
+  const hoursLeft = abs((left % day) / hour | 0)
+  const minutesLeft = abs((left % hour) / minute | 0)
+  const daysLeft = abs((left / day | 0))
+  return {
+    hoursLeft,
+    minutesLeft,
+    daysLeft,
+  }
+})
+
+
 const isVowel = (letter:string) => (
   letter.length === 1 && ['a','e','i','o','u','y'].includes(letter)
 )
 const isConsonant = (letter:string) => !isVowel(letter)
 const priceToNumber = (price:string) => {
   const priceArr = price.split('')
-  const result = []
+  const result:any = []
   for (const letter of priceArr) {
     if (/[0-9]/.test(letter)) {
       result.push(letter)
@@ -63,10 +174,11 @@ function App() {
   const [domains, setDomains] = useState<{
     name: string
     price: string
+    timeLeft: string
   }[]>([])
   useEffect(() => {
     ;(async() => {
-      const resp = await fetch('/ref-puppeteer/domains.json')
+      const resp = await fetch('/gd-scrape/domains.json')
       const domains = await resp.json()
       setDomains(domains)
     })()
@@ -81,7 +193,9 @@ function App() {
     }
     return filterPatterns.some(pattern => patternMatch(name, pattern))
       && priceToNumber(price) < Number(priceLimit)
+      && !checkExpired(domain)
   })
+
   return (
     <div className="App">
       <label className="price-limit">
@@ -122,7 +236,7 @@ function App() {
       {!showPatternsExplanation ? "" : (
         <div>
           <p>
-            A '$' represents a consonant.
+            A '$' represents a consonant. This includes consonant digraphs (th, st, etc.)
           </p>
           <p>
             A '_' represents a vowel.
@@ -156,10 +270,17 @@ function App() {
       <table>
         <tbody>
         {filtered.map(domain => {
+          const timeLeft = getTimeLeft(domain)
+          const { daysLeft, minutesLeft, hoursLeft } = timeLeft
           return (
             <tr>
               <td>{domain.name}</td>
               <td>{domain.price}</td>
+              <td>
+                {daysLeft ? `${daysLeft}D ` : ""}
+                {hoursLeft ? `${hoursLeft}H ` : ""}
+                {minutesLeft ? `${minutesLeft}M ` : ""}
+              </td>
             </tr>
           )
         })}

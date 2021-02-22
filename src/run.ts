@@ -2,7 +2,7 @@ import * as puppeteer from 'puppeteer'
 import { promisify } from 'util'
 import * as fs from 'fs-extra'
 
-const NUM_PAGES = 1000
+const NUM_PAGES = 10000
 
 async function main() {
   const browser = await puppeteer.launch({headless: false});
@@ -34,7 +34,9 @@ async function main() {
   await click('#adv_tld1_Chk')
   await promisify(setTimeout)(500)
   await page.evaluate(() => {
+    const qs = (arg):any => document.querySelector(arg)
     const qsa = arg => Array.from(document.querySelectorAll(arg))
+    qs('#adv_char_Ddl').value = 1
     qsa("button")
       .filter(btn => btn.innerText === "Run Search")[0].click()
   })
@@ -49,6 +51,7 @@ async function main() {
         domain.name = row.querySelectorAll('td')[3].innerText
         const priceTd = row.querySelectorAll('td')[8]
         const input = priceTd.querySelector('input')
+        domain.timeLeft = row.querySelectorAll('td')[9].innerText
         if (input) {
           domain.price = input.value
         } else {
@@ -60,16 +63,18 @@ async function main() {
     })
   }
   await promisify(setTimeout)(1000)
-  let domains = await fs.readJson('./data/domains.json')
+  let domains: any = []
   let prevDomains = []
   for (let i = 0; i < NUM_PAGES; i++) {
-    console.log(`Page ${i}`)
     const newDomains = await getDomains()
     if (newDomains[0].name === prevDomains[0]?.name) {
       await promisify(setTimeout)(3000)
       continue
     }
     prevDomains = newDomains
+    for (const domain of newDomains) {
+      domain.gathered = Date.now()
+    }
     domains = domains.concat(newDomains)
     await promisify(setTimeout)(1000)
     await page.evaluate(() => {
